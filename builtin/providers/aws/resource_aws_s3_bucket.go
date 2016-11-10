@@ -146,12 +146,17 @@ func resourceAwsS3Bucket() *schema.Resource {
 				Computed: true,
 			},
 
-			"versioning": &schema.Schema{
+			"versioning": {
 				Type:     schema.TypeSet,
 				Optional: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"enabled": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
+						},
+						"mfa_delete": {
 							Type:     schema.TypeBool,
 							Optional: true,
 							Default:  false,
@@ -162,6 +167,7 @@ func resourceAwsS3Bucket() *schema.Resource {
 					var buf bytes.Buffer
 					m := v.(map[string]interface{})
 					buf.WriteString(fmt.Sprintf("%t-", m["enabled"].(bool)))
+					buf.WriteString(fmt.Sprintf("%t-", m["mfa_delete"].(bool)))
 
 					return hashcode.String(buf.String())
 				},
@@ -575,13 +581,19 @@ func resourceAwsS3BucketRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 	log.Printf("[DEBUG] S3 Bucket: %s, versioning: %v", d.Id(), versioning)
-	if versioning.Status != nil && *versioning.Status == s3.BucketVersioningStatusEnabled {
+	if versioning.Status != nil {
 		vcl := make([]map[string]interface{}, 0, 1)
 		vc := make(map[string]interface{})
 		if *versioning.Status == s3.BucketVersioningStatusEnabled {
 			vc["enabled"] = true
 		} else {
 			vc["enabled"] = false
+		}
+
+		if *versioning.MFADelete == s3.MFADeleteEnabled {
+			vc["mfa_delete"] = true
+		} else {
+			vc["mfa_delete"] = false
 		}
 		vcl = append(vcl, vc)
 		if err := d.Set("versioning", vcl); err != nil {
@@ -1164,6 +1176,13 @@ func resourceAwsS3BucketVersioningUpdate(s3conn *s3.S3, d *schema.ResourceData) 
 		} else {
 			vc.Status = aws.String(s3.BucketVersioningStatusSuspended)
 		}
+
+		if c["mfa_delete"].(bool) {
+			vc.MFADelete = aws.String(s3.MFADeleteEnabled)
+		} else {
+			vc.MFADelete = aws.String(s3.MFADeleteDisabled)
+		}
+
 	} else {
 		vc.Status = aws.String(s3.BucketVersioningStatusSuspended)
 	}
